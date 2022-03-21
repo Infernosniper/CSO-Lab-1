@@ -161,7 +161,7 @@ int tmin(void) {
  */
 int isTmax(int x) {
   /*uses the same value as tmin, and checks if ~x is equal to it*/
-  return !(~x ^ ~(1 << 31) + 1);
+  return !(~x ^ (~(1 << 31) + 1));
 }
 /* 
  * allOddBits - return 1 if all odd-numbered bits in word set to 1
@@ -171,10 +171,8 @@ int isTmax(int x) {
  *   Rating: 2
  */
 int allOddBits(int x) {
-  int mask = 85;
-  mask+= mask << 8;
-  mask+= mask << 16
-  return !!((x & mask) ^ mask);
+  int A = 0xAA + (0xAA<<8) + (0xAA<<16) + (0xAA<<24);
+  return !((x&A) ^ A);
 }
 /* 
  * negate - return -x 
@@ -198,9 +196,15 @@ int negate(int x) {
  *   Rating: 3
  */
 int isAsciiDigit(int x) {
-  /*adds the two's complement of x to the bounds and checks the sign bits*/
-  return (49 + (~x + 1) >> 31) & !(57 + (~x + 1) >> 31);
+  /*Adds the limit values to the sign bit, then adds x and checks if anything rolls into negative*/
+  int sign = 1 << 31;
+
+  int upperLimit = sign & (~(sign | 0x39) + x) >> 31;
+  int lowerLimit = sign & (~0x30 + 1 + x) >> 31;
+
+  return !(upperLimit | lowerLimit);
 }
+
 /* 
  * conditional - same as x ? y : z 
  *   Example: conditional(2,4,5) = 4
@@ -234,7 +238,7 @@ int isLessOrEqual(int x, int y) {
     
   return xIsTmin 
   | (overflowed & yIsPositive)
-  | (!overflowed & sumIsPositive);
+  | ((!overflowed) & sumIsPositive);
 }
 //4
 /* 
@@ -301,30 +305,31 @@ unsigned float_twice(unsigned uf) {
  *   Rating: 4
  */
 unsigned float_i2f(int x) {
-  /*
-  * converts integer to float by calculating
-  * [sign], exponent, and mantissa. then joins them
+  /* 
+  * Creates the components of a floating point number based on the 
+  * 'formula' that we use. It splits the integer into its sign, exponent, and mantissa
+  * and then adds them together.
   */
-  unsigned sign = x & (1<<31);
-  unsigned i = 0;
-  unsigned exponent;
-  unsigned mantissa;
-  unsigned remaining;
-    
+  int sign = x & (1 << 31);
+  int neg = 1 << 31;
+  int exponent = 31;
+  int bias = 127;
+  int mantissa;
+
   if(!x) return 0;
-    
-  if(sign) x = ~x + 1;
-  while(!((x << i) & (1 << 31))) i++;
-    
-  exponent = 31 - i;
-  x = x << i;
-  mantissa = (x >> 8) & 0x7FFFFF;
-  remaining = x & 0xFF;
-    
-  if(remaining > 128 || (remaining == 128 && mantissa % 2))
-    mantissa++;
-    
-  return sign + ((exponent + 127) << 23) + mantissa;
+  if(x == neg) return neg | ((exponent + bias) << 23);
+  if(sign) x = ~x + 1; //converts to two's if num is negative
+
+  while(!(x & neg)){
+    x <<= 1;
+    exponent -= 1;
+  }
+
+  mantissa = (((~neg) & x) >> 8);
+
+  if(x & 0x80 && ((mantissa & 1) || ((x & 0x7F) > 0))) mantissa++;
+
+  return sign + ((exponent + bias) << 23) + mantissa;
 }
 /* 
  * float_f2i - Return bit-level equivalent of expression (int) f
